@@ -30,6 +30,68 @@
                 }
             }
         },
+        "SESRole": {
+            "Type": "AWS::IAM::Role",
+            "DependsOn":"MessageBucketPolicy",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ses.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "cloudwatch:*",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "logs:*",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "lambda:InvokeFunction",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["s3:Put*"],
+                                    "Resource": [
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/incoming*"}
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["s3:*"],
+                                    "Resource": [
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/*"}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
         "ReceiptRuleSet":{
             "Type" : "AWS::SES::ReceiptRuleSet"
         },
@@ -55,86 +117,6 @@
                     "Enabled" : true,
                     "TlsPolicy" : "Optional"
                 }
-            }
-        },
-        "LambdaReceiptRule": {
-            "Type" : "AWS::SES::ReceiptRule",
-            "DependsOn" : "SESRole",
-            "Properties" : {
-                "RuleSetName" : {"Ref":"ReceiptRuleSet"},
-                "After": {"Ref":"S3ReceiptRule"},
-                "Rule" : {
-                    "ScanEnabled" : false,
-                    "Recipients" : [
-                        {"Ref":"EmailDomain"},
-                        {"Fn::Sub":".${EmailDomain}"}
-                    ],
-                    "Actions" : [
-                        {
-                            "LambdaAction" : {
-                                "FunctionArn": {"Fn::GetAtt":["DebugFunction","Arn"]}
-                            }
-                        }
-                    ],
-                    "Enabled" : true,
-                    "TlsPolicy" : "Optional"
-                }
-            }
-        },
-        "TequilaSesFunction": {
-            "Type": "AWS::Serverless::Function",
-            "Properties": {
-                "Environment":{
-                    "Variables":{
-                        "STACK_NAME":{"Ref":"AWS::StackName"},
-                        "MESSAGE_BUCKET":{"Ref":"MessageBucket"},
-                        "INCOMING_PREFIX":"incoming/",
-                        "OUTGOING_PREFIX":"outgoing/",
-                        "FAILED_PREFIX":"failed/",
-                        "FORWARD_TO":{"Ref":"ForwardTo"}
-                    }
-                },
-                "CodeUri": "./build/",
-                "Events": {
-                    "ProxyGet": {
-                        "Properties": {
-                            "Method": "GET",
-                            "Path": "/{proxy+}"
-                        },
-                        "Type": "Api"
-                    },
-                    "ProxyPost": {
-                        "Properties": {
-                            "Method": "POST",
-                            "Path": "/{proxy+}"
-                        },
-                        "Type": "Api"
-                    },
-                    "ProxylessGet": {
-                        "Properties": {
-                            "Method": "GET",
-                            "Path": "/"
-                        },
-                        "Type": "Api"
-                    },
-                    "ProxylessPost": {
-                        "Properties": {
-                            "Method": "POST",
-                            "Path": "/"
-                        },
-                        "Type": "Api"
-                    }
-                },
-                "Handler": "index.handler",
-                "MemorySize": 128,
-                "Role": {
-                    "Fn::GetAtt": [
-                        "LambdaRole",
-                        "Arn"
-                    ]
-                },
-                "Runtime": "python3.6",
-                "Timeout": 300
             }
         },
         "LambdaRole": {
@@ -203,72 +185,90 @@
                 ]
             }
         },
-        "SESRole": {
-            "Type": "AWS::IAM::Role",
-            "DependsOn":"MessageBucketPolicy",
+        "TequilaSesFunction": {
+            "Type": "AWS::Serverless::Function",
             "Properties": {
-                "AssumeRolePolicyDocument": {
-                    "Version": "2012-10-17",
-                    "Statement": [
-                        {
-                            "Effect": "Allow",
-                            "Principal": {
-                                "Service": [
-                                    "ses.amazonaws.com"
-                                ]
-                            },
-                            "Action": [
-                                "sts:AssumeRole"
-                            ]
-                        }
+                "Environment":{
+                    "Variables":{
+                        "STACK_NAME":{"Ref":"AWS::StackName"},
+                        "MESSAGE_BUCKET":{"Ref":"MessageBucket"},
+                        "INCOMING_PREFIX":"incoming/",
+                        "OUTGOING_PREFIX":"outgoing/",
+                        "FAILED_PREFIX":"failed/",
+                        "FORWARD_TO":{"Ref":"ForwardTo"}
+                    }
+                },
+                "CodeUri": "./build/",
+                "Events": {
+                    "ProxyGet": {
+                        "Properties": {
+                            "Method": "GET",
+                            "Path": "/{proxy+}"
+                        },
+                        "Type": "Api"
+                    },
+                    "ProxyPost": {
+                        "Properties": {
+                            "Method": "POST",
+                            "Path": "/{proxy+}"
+                        },
+                        "Type": "Api"
+                    },
+                    "ProxylessGet": {
+                        "Properties": {
+                            "Method": "GET",
+                            "Path": "/"
+                        },
+                        "Type": "Api"
+                    },
+                    "ProxylessPost": {
+                        "Properties": {
+                            "Method": "POST",
+                            "Path": "/"
+                        },
+                        "Type": "Api"
+                    }
+                },
+                "Handler": "index.handler",
+                "MemorySize": 128,
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaRole",
+                        "Arn"
                     ]
                 },
-                "Path": "/",
-                "Policies": [
-                    {
-                        "PolicyName": "root",
-                        "PolicyDocument": {
-                            "Version": "2012-10-17",
-                            "Statement": [
-                                {
-                                    "Effect": "Allow",
-                                    "Action": "cloudwatch:*",
-                                    "Resource": "*"
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": "logs:*",
-                                    "Resource": "*"
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": "lambda:InvokeFunction",
-                                    "Resource": "*"
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": ["s3:Put*"],
-                                    "Resource": [
-                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/incoming*"}
-                                    ]
-                                },
-                                {
-                                    "Effect": "Allow",
-                                    "Action": ["s3:*"],
-                                    "Resource": [
-                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/*"}
-                                    ]
-                                }
-                            ]
+                "Runtime": "python3.6",
+                "Timeout": 300
+            }
+        },
+        "LambdaReceiptRule": {
+            "Type" : "AWS::SES::ReceiptRule",
+            "DependsOn" : "SESRole",
+            "Properties" : {
+                "RuleSetName" : {"Ref":"ReceiptRuleSet"},
+                "After": {"Ref":"S3ReceiptRule"},
+                "Rule" : {
+                    "ScanEnabled" : false,
+                    "Recipients" : [
+                        {"Ref":"EmailDomain"},
+                        {"Fn::Sub":".${EmailDomain}"}
+                    ],
+                    "Actions" : [
+                        {
+                            "LambdaAction" : {
+                                "FunctionArn": {"Fn::GetAtt":["TequilaSesFunction","Arn"]}
+                            }
                         }
-                    }
-                ]
+                    ],
+                    "Enabled" : true,
+                    "TlsPolicy" : "Optional"
+                }
             }
         },
         "SESPermission":{
             "Type":"AWS::Lambda::Permission",
             "Properties":{
-                "FunctionName": { "Ref": "DebugFunction" },
+                "FunctionName": { "Ref": "TequilaSesFunction" },
                 "Action": "lambda:InvokeFunction",
                 "Principal": "ses.amazonaws.com"
             }
