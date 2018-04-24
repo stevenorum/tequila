@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import boto3
+import os
 
 MESSAGE_BUCKET = os.environ.get("MESSAGE_BUCKET")
 INCOMING_PREFIX = os.environ.get("INCOMING_PREFIX")
