@@ -134,7 +134,7 @@
                     ]
                 },
                 "Runtime": "python3.6",
-                "Timeout": "300"
+                "Timeout": 300
             }
         },
         "LambdaRole": {
