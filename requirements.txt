@@ -1,0 +1,2 @@
+# boto3 is needed, but is installed by default in the python3.6 lambda runtime
+# Nothing else needed so far, as far as I can remember.

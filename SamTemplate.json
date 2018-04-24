@@ -1,0 +1,278 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Tequila email-forwarding stack.",
+    "Transform": "AWS::Serverless-2016-10-31",
+    "Parameters": {
+        "EmailDomain":{
+            "Type": "String",
+            "Description": "SES domain name, e.g. 'myemaildomain.com'"
+        },
+        "ForwardTo":{
+            "Type": "String",
+            "Description": "Email to which you want everything forwarded, e.g. 'yourname@gmail.com'"
+        }
+    },
+    "Resources": {
+        "MessageBucket": {
+            "Type":"AWS::S3::Bucket"
+        },
+        "MessageBucketPolicy" : {
+            "Type" : "AWS::S3::BucketPolicy",
+            "Properties" : {
+                "Bucket" : {"Ref" : "MessageBucket"},
+                "PolicyDocument": {
+                    "Statement":[{
+                        "Action":["s3:*"],
+                        "Effect":"Allow",
+                        "Resource": { "Fn::Sub" : "arn:${AWS::Partition}:s3:::${MessageBucket}/*"},
+                        "Principal":{"Service": ["ses.amazonaws.com"]}
+                    }]
+                }
+            }
+        },
+        "ReceiptRuleSet":{
+            "Type" : "AWS::SES::ReceiptRuleSet"
+        },
+        "S3ReceiptRule": {
+            "Type" : "AWS::SES::ReceiptRule",
+            "DependsOn" : "SESRole",
+            "Properties" : {
+                "RuleSetName" : {"Ref":"ReceiptRuleSet"},
+                "Rule" : {
+                    "ScanEnabled" : false,
+                    "Recipients" : [
+                        {"Ref":"EmailDomain"},
+                        {"Fn::Sub":".${EmailDomain}"}
+                    ],
+                    "Actions" : [
+                        {
+                            "S3Action" : {
+                                "BucketName": {"Ref":"MessageBucket"},
+                                "ObjectKeyPrefix":"incoming/"
+                            }
+                        }
+                    ],
+                    "Enabled" : true,
+                    "TlsPolicy" : "Optional"
+                }
+            }
+        },
+        "LambdaReceiptRule": {
+            "Type" : "AWS::SES::ReceiptRule",
+            "DependsOn" : "SESRole",
+            "Properties" : {
+                "RuleSetName" : {"Ref":"ReceiptRuleSet"},
+                "After": {"Ref":"S3ReceiptRule"},
+                "Rule" : {
+                    "ScanEnabled" : false,
+                    "Recipients" : [
+                        {"Ref":"EmailDomain"},
+                        {"Fn::Sub":".${EmailDomain}"}
+                    ],
+                    "Actions" : [
+                        {
+                            "LambdaAction" : {
+                                "FunctionArn": {"Fn::GetAtt":["DebugFunction","Arn"]}
+                            }
+                        }
+                    ],
+                    "Enabled" : true,
+                    "TlsPolicy" : "Optional"
+                }
+            }
+        },
+        "TequilaSesFunction": {
+            "Type": "AWS::Serverless::Function",
+            "Properties": {
+                "Environment":{
+                    "Variables":{
+                        "STACK_NAME":{"Ref":"AWS::StackName"},
+                        "MESSAGE_BUCKET":{"Ref":"MessageBucket"},
+                        "INCOMING_PREFIX":"incoming/",
+                        "OUTGOING_PREFIX":"outgoing/",
+                        "FAILED_PREFIX":"failed/",
+                        "FORWARD_TO":{"Ref":"ForwardTo"}
+                    }
+                },
+                "CodeUri": "./build/",
+                "Events": {
+                    "ProxyGet": {
+                        "Properties": {
+                            "Method": "GET",
+                            "Path": "/{proxy+}"
+                        },
+                        "Type": "Api"
+                    },
+                    "ProxyPost": {
+                        "Properties": {
+                            "Method": "POST",
+                            "Path": "/{proxy+}"
+                        },
+                        "Type": "Api"
+                    },
+                    "ProxylessGet": {
+                        "Properties": {
+                            "Method": "GET",
+                            "Path": "/"
+                        },
+                        "Type": "Api"
+                    },
+                    "ProxylessPost": {
+                        "Properties": {
+                            "Method": "POST",
+                            "Path": "/"
+                        },
+                        "Type": "Api"
+                    }
+                },
+                "Handler": "index.handler",
+                "MemorySize": 128,
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "python3.6",
+                "Timeout": "300"
+            }
+        },
+        "LambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "cloudwatch:*",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "logs:*",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "ses:get*",
+                                        "ses:list*",
+                                        "ses:send*"
+                                    ],
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["s3:GetObject"],
+                                    "Resource": [
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/incoming*"}
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["s3:PutObject","s3:PutObjectAcl"],
+                                    "Resource": [
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/outgoing/*"},
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/failed/*"}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "SESRole": {
+            "Type": "AWS::IAM::Role",
+            "DependsOn":"MessageBucketPolicy",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "ses.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "root",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "cloudwatch:*",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "logs:*",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": "lambda:InvokeFunction",
+                                    "Resource": "*"
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["s3:Put*"],
+                                    "Resource": [
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/incoming*"}
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": ["s3:*"],
+                                    "Resource": [
+                                        {"Fn::Sub":"arn:${AWS::Partition}:s3:::${MessageBucket}/*"}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "SESPermission":{
+            "Type":"AWS::Lambda::Permission",
+            "Properties":{
+                "FunctionName": { "Ref": "DebugFunction" },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "ses.amazonaws.com"
+            }
+        }
+    },
+    "Outputs":{}
+}
