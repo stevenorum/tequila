@@ -3,6 +3,8 @@ Premade CF stack for forwarding email from SES to your normal account.
 
 Heavily based on [this guide](http://www.daniloaz.com/en/use-gmail-with-your-own-domain-for-free-thanks-to-amazon-ses-lambda/) and [this NodeJS lambda code](https://github.com/arithmetric/aws-lambda-ses-forwarder), so much thanks to the authors of both of those.
 
+This stack should work pretty much out-of-the-box if all you want to do is forward all email to a domain to a single email address.  If you aren't doing anything fancy with email and just want to let yourself receive emails to a domain that you're managing in Route 53, this will do the trick.  If you want to do fancy stuff with email (automatically sending/replying/filtering or something like that), this should serve as a good starting point 
+
 ## Steps
 
 ### Get yoself a domain (manual)
